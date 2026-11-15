@@ -43,6 +43,8 @@
             #epgSection { scroll-margin-top: 5rem; }
             #channelsGrid { grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
             #channelsGrid > div { min-width: 0; border-radius: 1rem; }
+            #channelsGrid > div > div:first-child { height: 6.25rem; aspect-ratio: auto; padding: 0.5rem; }
+            #channelsGrid > div > div:first-child img { max-height: 5.25rem; }
             #channelsGrid > div h4 { font-size: 0.78rem; }
             #channelsGrid > div > div:last-child { padding: 0.65rem; }
             #categoryFilters { -webkit-overflow-scrolling: touch; scrollbar-width: none; }
@@ -832,7 +834,12 @@
                 return ch.category === activeCategory;
             });
 
+            const categoryOrder = { national: 0, news: 1, regional: 2, music: 3 };
             return filtered.sort((a, b) => {
+                const aCategory = categoryOrder[a.category] ?? 9;
+                const bCategory = categoryOrder[b.category] ?? 9;
+                if (aCategory !== bCategory) return aCategory - bCategory;
+
                 const aLast = a.id === lastWatchedId ? 1 : 0;
                 const bLast = b.id === lastWatchedId ? 1 : 0;
                 if (aLast !== bLast) return bLast - aLast;
