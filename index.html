@@ -32,6 +32,27 @@
             }
         }
     </script>
+    <style>
+        html { scroll-behavior: smooth; }
+        @media (max-width: 640px) {
+            body { padding-bottom: env(safe-area-inset-bottom); }
+            header { padding-top: env(safe-area-inset-top); }
+            #playerContainer { aspect-ratio: 16 / 10; min-height: 190px; }
+            #videoOverlay { padding: 0.75rem; }
+            #videoOverlay h2 { max-width: 19rem; }
+            #epgSection { scroll-margin-top: 5rem; }
+            #channelsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
+            #channelsGrid > div { min-width: 0; border-radius: 1rem; }
+            #channelsGrid > div h4 { font-size: 0.78rem; }
+            #channelsGrid > div > div:last-child { padding: 0.65rem; }
+            #categoryFilters { -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+            #categoryFilters::-webkit-scrollbar { display: none; }
+            #advancedTools { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 0.25rem; scrollbar-width: none; }
+            #advancedTools::-webkit-scrollbar { display: none; }
+            #advancedTools button { min-height: 2.5rem; white-space: nowrap; }
+            #activeChannelName { font-size: 0.95rem; }
+        }
+    </style>
 </head>
 <body class="bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased min-h-screen flex flex-col overflow-x-hidden transition-colors duration-200 selection:bg-blue-500 selection:text-white">
 
@@ -189,10 +210,15 @@
                             <i class="fa-regular fa-calendar-check"></i>
                             <span>Οδηγός Προγράμματος (EPG)</span>
                         </div>
-                        <button id="toggleScheduleBtn" onclick="toggleFullSchedule()" class="hidden text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:text-blue-500 flex items-center gap-1">
-                            <span id="toggleScheduleText">Όλο το πρόγραμμα</span>
-                            <i id="toggleScheduleIcon" class="fa-solid fa-chevron-down text-[10px]"></i>
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button id="refreshEpgBtn" onclick="refreshGreekEPG()" class="text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:text-blue-500 flex items-center gap-1" title="Ανανέωση EPG">
+                                <i class="fa-solid fa-rotate-right"></i><span class="hidden sm:inline">Ανανέωση</span>
+                            </button>
+                            <button id="toggleScheduleBtn" onclick="toggleFullSchedule()" class="hidden text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:text-blue-500 flex items-center gap-1">
+                                <span id="toggleScheduleText">Όλο το πρόγραμμα</span>
+                                <i id="toggleScheduleIcon" class="fa-solid fa-chevron-down text-[10px]"></i>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Loading / Unavailable EPG State -->
@@ -357,6 +383,7 @@
         let epgDatabase = {}; // { normalizedChannelId: [ { start, stop, title, desc } ] }
         let epgChannelNames = {}; // { normalizedChannelId: displayName }
         let epgLoaded = false;
+        let epgSource = '';
         let isFullScheduleOpen = false;
 
         // DOM Elements
@@ -462,6 +489,17 @@
         }
 
         // --- ΑΝΑΚΤΗΣΗ & PARSING ΕΛΛΗΝΙΚΟΥ EPG (XMLTV) ---
+        async function fetchWithTimeout(url, timeoutMs = 15000) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+                return response;
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
         async function fetchGreekEPG() {
             const epgEmptyMsg = document.getElementById('epgEmptyMsg');
             if (!currentChannel) epgEmptyMsg.textContent = 'Φόρτωση οδηγού προγράμματος (EPG)...';
@@ -474,15 +512,31 @@
                 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://iptv-org.github.io/epg/guides/gr/cosmote.gr.xml')
             ];
 
+            const cached = sessionStorage.getItem('gr_tv_epg_cache');
+            if (cached) {
+                try {
+                    const parsedCache = JSON.parse(cached);
+                    if (Date.now() - parsedCache.savedAt < 30 * 60 * 1000 && parseXMLTV(parsedCache.xmlText)) {
+                        epgLoaded = true;
+                        epgSource = 'cache';
+                        if (currentChannel) renderChannelEPG(currentChannel);
+                        renderChannels();
+                        return;
+                    }
+                } catch { sessionStorage.removeItem('gr_tv_epg_cache'); }
+            }
+
             for (const src of epgSources) {
                 try {
-                    const res = await fetch(src);
+                    const res = await fetchWithTimeout(src);
                     if (!res.ok) continue;
                     const xmlText = await res.text();
                     if (!xmlText.includes('<programme')) continue;
 
-                    parseXMLTV(xmlText);
+                    if (!parseXMLTV(xmlText)) continue;
+                    try { sessionStorage.setItem('gr_tv_epg_cache', JSON.stringify({ savedAt: Date.now(), xmlText })); } catch { /* cache is optional */ }
                     epgLoaded = true;
+                    epgSource = src;
                     if (currentChannel) renderChannelEPG(currentChannel);
                     else epgEmptyMsg.textContent = 'Επίλεξε ένα κανάλι για να δεις τι παίζει τώρα & μετά.';
                     renderChannels(); // Ενημέρωση καρτών με τρέχουσα εκπομπή
@@ -492,9 +546,16 @@
                 }
             }
 
-            if (!epgLoaded && !currentChannel) {
-                epgEmptyMsg.textContent = 'Επίλεξε ένα κανάλι για προβολή.';
+            if (!epgLoaded) {
+                epgEmptyMsg.textContent = 'Το EPG δεν είναι προσωρινά διαθέσιμο. Μπορείς να δοκιμάσεις ξανά αργότερα.';
             }
+        }
+
+        function refreshGreekEPG() {
+            sessionStorage.removeItem('gr_tv_epg_cache');
+            epgLoaded = false;
+            document.getElementById('epgEmptyMsg').textContent = 'Ανανέωση οδηγού προγράμματος (EPG)...';
+            fetchGreekEPG();
         }
 
         function parseXmltvDate(dateStr) {
@@ -521,6 +582,10 @@
         function parseXMLTV(xmlText) {
             const parser = new DOMParser();
             const doc = parser.parseFromString(xmlText, 'text/xml');
+            if (doc.querySelector('parsererror')) return false;
+
+            epgDatabase = {};
+            epgChannelNames = {};
 
             // 1. Χαρτογράφηση channel id -> display-name
             doc.querySelectorAll('channel').forEach(chEl => {
@@ -555,6 +620,7 @@
             Object.keys(epgDatabase).forEach(k => {
                 epgDatabase[k].sort((a, b) => a.start - b.start);
             });
+            return Object.values(epgDatabase).some(programmes => programmes.length > 0);
         }
 
         function findChannelProgrammes(channel) {
@@ -967,11 +1033,16 @@
         }
 
         function handleStreamError(channel) {
-            updateActiveBarUI(channel, 'Απαιτείται επίσημο WebTV', false);
+            const attemptedUrl = getChannelCandidateUrls(channel)[currentUrlAttemptIndex] || '';
+            const isHttp = attemptedUrl.startsWith('http://');
+            const reason = isHttp
+                ? 'Η πηγή είναι HTTP και ο browser την μπλοκάρει από ασφαλή σελίδα HTTPS.'
+                : 'Η πηγή δεν απάντησε ή μπλοκάρει CORS, geo-blocking ή token embedding.';
+            updateActiveBarUI(channel, 'Η ροή δεν είναι διαθέσιμη από εδώ', false);
             showOverlay(
                 'error',
-                `Το stream του ${channel.name} είναι κλειδωμένο`,
-                'Το κανάλι προστατεύει τη ροή του (token/geo-block). Άνοιξέ το από το επίσημο WebTV.',
+                `Δεν φορτώθηκε το stream του ${channel.name}`,
+                `${reason} Δοκίμασε ξανά ή άνοιξε το επίσημο WebTV.`,
                 channel.webUrl
             );
         }
