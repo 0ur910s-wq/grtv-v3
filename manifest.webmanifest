@@ -1,0 +1,11 @@
+{
+  "name": "GR TV Live",
+  "short_name": "GR TV",
+  "description": "Ελληνικά δημόσια τηλεοπτικά streams και EPG",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "lang": "el",
+  "icons": []
+}

@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const advanced = await readFile(new URL('../js/advanced.js', import.meta.url), 'utf8');
+const manifest = JSON.parse(await readFile(new URL('../manifest.webmanifest', import.meta.url), 'utf8'));
+
+assert.match(html, /<meta name="description"/);
+assert.match(html, /js\/advanced\.js/);
+assert.match(advanced, /checkAllStreams/);
+assert.match(advanced, /exportFavorites/);
+assert.match(advanced, /createPlaylist/);
+assert.equal(manifest.name, 'GR TV Live');
+console.log('GR TV v3 smoke tests passed');
