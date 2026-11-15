@@ -42,11 +42,11 @@
             #videoOverlay h2 { max-width: 19rem; }
             #epgSection { scroll-margin-top: 5rem; }
             #channelsGrid { grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
-            #channelsGrid > div { min-width: 0; border-radius: 1rem; }
-            #channelsGrid > div > div:first-child { height: 6.25rem; aspect-ratio: auto; padding: 0.5rem; }
+            #channelsGrid > div { min-width: 0; height: 6.25rem; border-radius: 1rem; display: flex; flex-direction: row; }
+            #channelsGrid > div > div:first-child { width: 7.5rem; height: 100%; aspect-ratio: auto; padding: 0.5rem; flex: 0 0 7.5rem; }
             #channelsGrid > div > div:first-child img { max-height: 5.25rem; }
             #channelsGrid > div h4 { font-size: 0.78rem; }
-            #channelsGrid > div > div:last-child { padding: 0.65rem; }
+            #channelsGrid > div > div:last-child { padding: 0.65rem; flex: 1; min-width: 0; }
             #categoryFilters { -webkit-overflow-scrolling: touch; scrollbar-width: none; }
             #categoryFilters::-webkit-scrollbar { display: none; }
             #advancedTools { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 0.25rem; scrollbar-width: none; }
@@ -516,7 +516,7 @@
                 'https://corsproxy.io/?' + encodeURIComponent('https://iptv-epg.org/files/epg-gr.xml')
             ];
 
-            const cached = sessionStorage.getItem('gr_tv_epg_cache');
+            const cached = sessionStorage.getItem('gr_tv_epg_cache_v2');
             if (cached) {
                 try {
                     const parsedCache = JSON.parse(cached);
@@ -527,7 +527,7 @@
                         renderChannels();
                         return;
                     }
-                } catch { sessionStorage.removeItem('gr_tv_epg_cache'); }
+                } catch { sessionStorage.removeItem('gr_tv_epg_cache_v2'); }
             }
 
             for (const src of epgSources) {
@@ -538,7 +538,7 @@
                     if (!xmlText.includes('<programme')) continue;
 
                     if (!parseXMLTV(xmlText)) continue;
-                    try { sessionStorage.setItem('gr_tv_epg_cache', JSON.stringify({ savedAt: Date.now(), xmlText })); } catch { /* cache is optional */ }
+                    try { sessionStorage.setItem('gr_tv_epg_cache_v2', JSON.stringify({ savedAt: Date.now(), xmlText })); } catch { /* cache is optional */ }
                     epgLoaded = true;
                     epgSource = src;
                     if (currentChannel) renderChannelEPG(currentChannel);
@@ -557,6 +557,7 @@
 
         function refreshGreekEPG() {
             sessionStorage.removeItem('gr_tv_epg_cache');
+            sessionStorage.removeItem('gr_tv_epg_cache_v2');
             epgLoaded = false;
             document.getElementById('epgEmptyMsg').textContent = 'Ανανέωση οδηγού προγράμματος (EPG)...';
             fetchGreekEPG();
