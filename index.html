@@ -14,7 +14,11 @@
     <!-- Font Awesome για εικονίδια -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- HLS.js για αναπαραγωγή τηλεοπτικών streams (.m3u8) -->
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17"></script>
+    <!-- dash.js για MPEG-DASH streams (.mpd) -->
+    <script src="https://cdn.dashjs.org/v4.7.4/dash.all.min.js"></script>
+    <!-- Τοπικό dataset της Greekstreamtv.m3u -->
+    <script src="data/greekstreamtv.js"></script>
 
     <script>
         tailwind.config = {
@@ -346,6 +350,7 @@
         let activeCategory = 'all';
         let searchQuery = '';
         let hlsInstance = null;
+        let dashInstance = null;
         let currentUrlAttemptIndex = 0;
 
         // EPG State
@@ -371,11 +376,37 @@
             return (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9α-ω]/g, '');
         }
 
+        function mergeGreekstreamChannels() {
+            const existingByName = new Map();
+            curatedChannels.forEach(ch => {
+                [ch.name, ...(ch.matchKeys || [])].forEach(key => existingByName.set(normalizeStr(key), ch));
+            });
+
+            (greekstreamChannels || []).forEach(source => {
+                const sourceName = normalizeStr(source.name);
+                const existing = [...existingByName.entries()]
+                    .find(([key]) => sourceName === key || sourceName.includes(key) || key.includes(sourceName))?.[1];
+                if (existing) {
+                    existing.backupUrls = Array.from(new Set([...(existing.backupUrls || []), source.url]));
+                    return;
+                }
+
+                const channel = {
+                    ...source,
+                    source: 'Greekstreamtv',
+                    logo: source.logo || `https://placehold.co/160x100/0f172a/94a3b8?text=${encodeURIComponent(source.name.substring(0, 8))}`
+                };
+                allChannels.push(channel);
+                existingByName.set(sourceName, channel);
+            });
+        }
+
         // --- ΑΡΧΙΚΟΠΟΙΗΣΗ ---
         window.addEventListener('DOMContentLoaded', () => {
             initTheme();
             initClock();
             allChannels = [...customChannels, ...curatedChannels];
+            mergeGreekstreamChannels();
 
             if (lastWatchedId) {
                 const lastCh = allChannels.find(c => c.id === lastWatchedId);
@@ -859,12 +890,29 @@
                 hlsInstance.destroy();
                 hlsInstance = null;
             }
+            if (dashInstance) {
+                dashInstance.reset();
+                dashInstance = null;
+            }
 
             video.pause();
             video.removeAttribute('src');
             video.load();
 
-            if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+            if (/\.mpd(?:$|\?)/i.test(streamUrl)) {
+                if (typeof dashjs === 'undefined' || !dashjs.MediaPlayer) {
+                    tryNextBackupOrFail(channel);
+                    return;
+                }
+                dashInstance = dashjs.MediaPlayer().create();
+                dashInstance.initialize(video, streamUrl, true);
+                dashInstance.on(dashjs.MediaPlayer.events.ERROR, () => tryNextBackupOrFail(channel));
+                video.addEventListener('playing', () => {
+                    hideOverlay();
+                    updateActiveBarUI(channel, 'Ζωντανή Μετάδοση • MPEG-DASH', true);
+                }, { once: true });
+                video.addEventListener('error', () => tryNextBackupOrFail(channel), { once: true });
+            } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
                 hlsInstance = new Hls({
                     enableWorker: true,
                     lowLatencyMode: true,
